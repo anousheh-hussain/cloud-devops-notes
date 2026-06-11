@@ -1,0 +1,443 @@
+# Linux Fundamentals
+
+A personal study guide covering Linux basics, boot process, filesystem structure, and essential concepts — built while preparing for RHCSA and cloud/DevOps roles.
+
+---
+
+## Table of Contents
+
+1. [Unix vs Linux](#unix-vs-linux)
+2. [Linux History](#linux-history)
+3. [GNU vs Linux](#gnu-vs-linux)
+4. [What is Firmware?](#what-is-firmware)
+5. [Linux Boot Process](#linux-boot-process)
+6. [Runlevels and systemd Targets](#runlevels-and-systemd-targets)
+7. [Filesystem Hierarchy (FHS)](#filesystem-hierarchy-fhs)
+8. [Inodes](#inodes)
+9. [Hard Links vs Soft Links](#hard-links-vs-soft-links)
+10. [SSH Essentials](#ssh-essentials)
+11. [DOS vs Linux Terminal](#dos-vs-linux-terminal)
+
+---
+
+## Unix vs Linux
+
+| Feature | UNIX | Linux |
+|---|---|---|
+| Origin | 1970s, AT&T Bell Labs | 1991, Linus Torvalds |
+| Source Code | Closed-source | Open-source |
+| Cost | Paid | Free (mostly) |
+| Flexibility | Limited | Highly customizable |
+| Examples | AIX, HP-UX, Solaris | Ubuntu, RHEL, CentOS |
+| Primary Use | Enterprise servers | Servers, desktops, cloud |
+
+> **Key Point:** Linux is not UNIX — it is *Unix-like* (POSIX compliant). They share design philosophy, not code.
+
+---
+
+## Linux History
+
+| Year | Event |
+|---|---|
+| 1969 | UNIX created at Bell Labs |
+| 1983 | GNU Project started by Richard Stallman |
+| 1991 | Linux kernel created by Linus Torvalds |
+| 1992+ | Linux kernel + GNU tools combined → complete OS |
+| 2000s | Enterprise Linux (RHEL, SUSE) grows |
+| Present | Dominates cloud, servers, and DevOps |
+
+---
+
+## GNU vs Linux
+
+These two are frequently confused. Here is the distinction:
+
+**GNU** (GNU's Not Unix) — started by Richard Stallman:
+- Provides user-space tools: shell (`bash`), core utilities (`ls`, `cp`, `mv`), compiler (`gcc`)
+
+**Linux** — created by Linus Torvalds:
+- It is the **kernel** — handles memory management, process scheduling, hardware interaction
+
+```
+GNU (tools) + Linux (kernel) = Complete Operating System
+```
+
+> **Analogy:** Linux is the engine, GNU is the toolbox — together they make the car.
+
+---
+
+## What is Firmware?
+
+Firmware is low-level software stored in hardware (ROM/Flash memory) that initializes the system before the OS loads.
+
+**Examples:** BIOS, UEFI, router firmware
+
+| Component | Role |
+|---|---|
+| Firmware (BIOS/UEFI) | Starts the system |
+| Bootloader (GRUB) | Loads the OS |
+| Kernel | Runs the OS |
+
+**Low-level vs High-level software:**
+
+| Feature | Low-Level | High-Level |
+|---|---|---|
+| Interaction | Direct with hardware | Through the OS |
+| Examples | Firmware, kernel, device drivers | Browsers, applications |
+
+---
+
+## Linux Boot Process
+
+### Full Flow
+
+```
+POST → BIOS/UEFI → MBR/GPT → GRUB2 → Kernel → initramfs → systemd → Target → Login
+```
+
+---
+
+### Step 1 — POST (Power-On Self Test)
+- Checks hardware: RAM, CPU, keyboard, storage
+- Runs before the OS loads (firmware-level)
+- If POST fails: system stops, may show beep codes
+
+---
+
+### Step 2 — BIOS / UEFI
+
+| Feature | BIOS | UEFI |
+|---|---|---|
+| Speed | Slower | Faster |
+| Disk Support | Up to 2 TB | Supports large disks |
+| Interface | Text-based | GUI support |
+| Boot Method | MBR | GPT |
+
+> Modern RHEL systems use UEFI.
+
+---
+
+### Step 3 — MBR / GPT
+
+**MBR (Master Boot Record):** First 512 bytes of disk. Contains bootloader code and partition table. Used with BIOS.
+
+**GPT (GUID Partition Table):** Modern replacement. Supports larger disks and more partitions. Used with UEFI.
+
+---
+
+### Step 4 — GRUB2 (Bootloader)
+
+- Full form: **Grand Unified Bootloader v2**
+- Displays OS selection menu, loads the kernel, passes boot parameters
+- Config file: `/boot/grub2/grub.cfg`
+- You can edit boot parameters at startup by pressing `e`
+
+---
+
+### Step 5 — Kernel
+
+- The core of Linux
+- Manages: memory, process scheduling, device drivers, hardware communication
+- Kernel file: `/boot/vmlinuz`
+
+---
+
+### Step 6 — initramfs
+
+- Full form: **Initial RAM File System**
+- A temporary root filesystem loaded into RAM at boot
+- **Why it exists:** The kernel cannot access the disk at startup because storage drivers are not yet loaded. initramfs provides those drivers so the real filesystem can be mounted.
+- File location: `/boot/initramfs`
+
+---
+
+### Step 7 — systemd
+
+- The first process started by the kernel
+- **PID = 1**
+- Starts all services, manages system state, handles targets
+
+```bash
+ps -p 1    # confirm PID 1 is systemd
+```
+
+---
+
+### Step 8 — Target (Runlevel)
+
+| Target | Mode |
+|---|---|
+| `multi-user.target` | CLI mode |
+| `graphical.target` | GUI mode |
+| `rescue.target` | Troubleshooting / safe mode |
+
+---
+
+### Boot Process: Key Points for RHCSA
+
+| Item | Value |
+|---|---|
+| Bootloader | GRUB2 |
+| First process | systemd (PID 1) |
+| Kernel file | `/boot/vmlinuz` |
+| Temp filesystem | initramfs |
+| GRUB config | `/boot/grub2/grub.cfg` |
+
+---
+
+### Boot Process Interview Q&A
+
+**Q: What is PID 1 and why does it matter?**  
+systemd — the first process started by the kernel. It controls all other processes.
+
+**Q: Why do we need initramfs?**  
+Because the kernel needs storage drivers to access the disk, but those drivers live on the disk. initramfs breaks this chicken-and-egg problem by loading drivers from RAM first.
+
+**Q: What replaced the traditional init system?**  
+systemd (used in RHEL 7+).
+
+---
+
+## Runlevels and systemd Targets
+
+### Traditional Runlevels (SysV)
+
+| Runlevel | Meaning |
+|---|---|
+| 0 | Shutdown |
+| 1 | Single-user / maintenance mode |
+| 3 | Multi-user CLI |
+| 5 | Multi-user GUI |
+| 6 | Reboot |
+
+### Modern Equivalent — systemd Targets
+
+| Runlevel | systemd Target |
+|---|---|
+| 0 | `poweroff.target` |
+| 1 | `rescue.target` |
+| 3 | `multi-user.target` |
+| 5 | `graphical.target` |
+| 6 | `reboot.target` |
+
+> **Note:** RHCSA focuses on targets and systemctl commands. Runlevels are useful for theory and older system interviews.
+
+### Useful Commands
+
+```bash
+systemctl get-default                        # Check current default target
+systemctl set-default graphical.target       # Set default target
+systemctl isolate multi-user.target          # Switch target temporarily
+systemctl isolate rescue.target              # Switch to rescue/safe mode
+```
+
+---
+
+## Filesystem Hierarchy (FHS)
+
+FHS = **Filesystem Hierarchy Standard** — defines how directories are organized in Linux.
+
+Everything starts from `/` (root). There are no drive letters like Windows.
+
+| Directory | Purpose |
+|---|---|
+| `/` | Root of the entire filesystem |
+| `/bin` | Essential user commands (`ls`, `cp`, `mv`) |
+| `/sbin` | System/admin commands (`fdisk`, `reboot`) |
+| `/boot` | Boot files: kernel, initramfs, GRUB config |
+| `/dev` | Device files (`/dev/sda`, `/dev/null`) |
+| `/etc` | Configuration files (`/etc/passwd`, `/etc/hosts`) |
+| `/home` | Home directories for normal users |
+| `/root` | Home directory for the root user |
+| `/lib` | Shared libraries needed by binaries |
+| `/media` | Auto-mount point for removable drives (USB, CD) |
+| `/mnt` | Temporary manual mount point |
+| `/opt` | Optional/third-party software |
+| `/proc` | Virtual filesystem — process and kernel info |
+| `/sys` | Hardware and kernel interface |
+| `/tmp` | Temporary files (cleared on reboot) |
+| `/var` | Variable data: logs (`/var/log`), cache, mail |
+| `/usr` | User programs and data (`/usr/bin`, `/usr/lib`) |
+
+> **Key concept:** In Linux, everything is a file — including devices, processes, and sockets.
+
+### FHS Interview Q&A
+
+**Q: Difference between `/bin` and `/usr/bin`?**  
+`/bin` holds essential commands needed during boot. `/usr/bin` holds regular user programs installed after boot.
+
+**Q: Where are config files stored?** `/etc`
+
+**Q: Where are system logs?** `/var/log`
+
+**Q: Difference between `/home` and `/root`?**  
+`/home` is for regular users. `/root` is the home directory of the superuser.
+
+**Q: What is `/proc`?**  
+A virtual filesystem that exposes real-time kernel and process information. Nothing on disk — generated dynamically.
+
+---
+
+## Inodes
+
+An **inode** (Index Node) is a data structure that stores metadata about a file. Every file in Linux has a unique inode number.
+
+### What an Inode Stores
+
+- File size
+- Owner and permissions
+- Timestamps (created, modified, accessed)
+- Disk block locations
+
+> **Important:** An inode does NOT store the filename. The filename is stored in the directory, which points to the inode.
+
+```
+Filename → Inode → Actual file data on disk
+```
+
+### Viewing Inodes
+
+```bash
+ls -i           # Show inode numbers
+stat filename   # Detailed inode info
+```
+
+### Why Inodes Matter
+
+1. **Hard links** — multiple filenames can point to the same inode
+2. **Deletion** — a file is only deleted when its inode has no remaining links
+3. **Inode exhaustion** — a filesystem can run out of inodes even with free disk space
+
+**Interview Q: What is an inode?**  
+A data structure that uniquely identifies a file and stores its metadata, but not its name.
+
+---
+
+## Hard Links vs Soft Links
+
+Both create references to files, but they work differently.
+
+### Hard Link
+
+A hard link is another filename pointing to the **same inode** as the original file.
+
+```bash
+ln file1 hardlink1
+ls -i    # Both show the same inode number
+```
+
+- Same inode ✅
+- Survives if original file is deleted ✅
+- Cannot cross filesystems ❌
+- Cannot link to directories ❌
+
+### Soft Link (Symbolic Link)
+
+A soft link is a shortcut — a separate file that points to the original file's path.
+
+```bash
+ln -s file1 softlink1
+ls -l    # Shows: softlink1 -> file1
+```
+
+- Different inode
+- Breaks if the original file is deleted ❌
+- Works across filesystems ✅
+- Can link to directories ✅
+
+### Comparison Table
+
+| Feature | Hard Link | Soft Link |
+|---|---|---|
+| Inode | Same as original | Different |
+| Survives original deletion | Yes | No |
+| Works across filesystems | No | Yes |
+| Works for directories | No | Yes |
+
+### Practice
+
+```bash
+touch file1
+ln file1 hard1
+ln -s file1 soft1
+ls -i
+rm file1
+cat hard1    # Still works
+cat soft1    # Broken link
+```
+
+### Interview Q&A
+
+**Q: Which link survives file deletion?** Hard link.  
+**Q: Which works across filesystems?** Soft link.  
+**Q: How do you identify a soft link?** `ls -l` shows an arrow: `softlink -> target`
+
+---
+
+## SSH Essentials
+
+SSH (Secure Shell) is the standard tool for securely connecting to remote Linux servers.
+
+```bash
+ssh username@ip-address
+```
+
+### Key Concepts
+
+**Password vs Key-Based Authentication:**
+- Password auth is simple but vulnerable to brute-force attacks
+- Key-based auth uses a public/private key pair — more secure, supports automation
+
+**Important files:**
+
+| File | Location | Purpose |
+|---|---|---|
+| SSH server config | `/etc/ssh/sshd_config` | Server-side settings |
+| Known hosts | `~/.ssh/known_hosts` | Fingerprints of servers you've connected to |
+| Authorized keys | `~/.ssh/authorized_keys` | Public keys allowed to log in without password |
+
+### Copying Files Over SSH
+
+```bash
+scp localfile.sh username@192.168.1.50:/home/username/    # Copy file to remote
+scp username@192.168.1.50:/remote/file .                  # Copy file from remote
+```
+
+### Hardening SSH (Real-World)
+
+Edit `/etc/ssh/sshd_config`:
+- Set `PermitRootLogin no`
+- Change `Port 22` to a non-default port
+- Set `PasswordAuthentication no` (key-only)
+
+### SSH Interview Q&A
+
+**Q: Default SSH port?** 22
+
+**Q: Where is the SSH server config?** `/etc/ssh/sshd_config`
+
+**Q: How do you copy files securely?** `scp` or `rsync`
+
+**Q: What is `~/.ssh/authorized_keys`?**  
+A file on the server listing public keys that are allowed passwordless login.
+
+---
+
+## DOS vs Linux Terminal
+
+| Feature | DOS (Command Prompt) | Linux Terminal |
+|---|---|---|
+| OS Type | Single-user | Multi-user |
+| Commands | Basic | Advanced |
+| Scripting | Limited | Very powerful (bash scripts) |
+| File System | Simple (C:, D:) | Hierarchical (single root `/`) |
+| Security | Weak | Strong |
+| Primary Use | Personal PC | Servers, cloud, DevOps |
+
+**Path separator:**
+- Linux: `/` (forward slash) — e.g., `/home/ziya/file.txt`
+- DOS/Windows: `\` (backslash) — e.g., `C:\Users\ziya\file.txt`
+
+---
+
+*Notes built while studying for RHCSA — part of the [Cloud Girl Logs](https://hashnode.com) series.*
